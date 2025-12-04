@@ -1,90 +1,101 @@
 import numpy as np
 
 from units import (
-    Strain,
-    StrainArray,
+    StrainTensor,
     Stress,
-    StressArray,
+    StressTensor,
     VolumetricEnergy,
 )
 
 
 # Material properties
-E = Stress(40, "MPa")  # Young's modulus
-nu = 0.3  # Poisson's ratio
-sigma_c = Stress(-20, "kPa")  # Compressive stress
-sigma_d = Stress(-30, "kPa")  # Deviatoric stress
+E = Stress(30, "MPa")  # 40,000,000 Pa
+nu = 0.3
+sigma_c = Stress(150, "kPa")
+sigma_d1 = Stress(225, "kPa")
+sigma_d2 = Stress(300, "kPa")
+
+# Stress state arrays (Principal Stresses - Vectors)
+# Note: from_list will now automatically detect 'kPa' from sigma_c
+sigma_1_etapa = StressTensor.from_list([sigma_c, sigma_c, sigma_c])
+sigma_2_etapa = StressTensor.from_list([sigma_c + sigma_d1, sigma_c, sigma_c])
+sigma_3_etapa = StressTensor.from_list(
+    [sigma_c + sigma_d1 + sigma_d2, sigma_c, sigma_c]
+)
 
 
-# Stress state arrays (principal stresses)
-sigma_1_etapa = StressArray([sigma_c, sigma_c, sigma_c])
-sigma_2_etapa = StressArray([sigma_c + sigma_d, sigma_c, sigma_c])
-
-
-def deformacion_elastica(E: Stress, nu: float, sigma: StressArray) -> StrainArray:
+def deformacion_elastica(E: Stress, nu: float, sigma: StressTensor) -> StrainTensor:
     """
-    Computes principal elastic strains given principal stresses.
-    E and sigma are Stress objects; returns StrainArray of Strain objects.
+    Computes principal elastic strains given principal stresses (Hooke's Law 3D).
     """
+    # Get raw floats (in Pa)
+    sigma_vals = sigma.data
+    E_val = E.to_base_units()
 
-    # Convert all stresses to floating values in base units (Pa)
-    sigma_values = sigma.to_np_array().astype(float)
-    E_value = float(E.to_base_units())  # E converted to Pa (scalar)
+    # Hooke's Law for Principal Stresses (Vectorized)
+    # epsilon_i = (1/E) * [sigma_i - nu * (sum(sigma) - sigma_i)]
+    sum_sigma = np.sum(sigma_vals)
+    epsilon_vals = (1.0 / E_val) * (sigma_vals - nu * (sum_sigma - sigma_vals))
 
-    # Hooke's law in principal directions
-    epsilon = (1.0 / E_value) * (
-        sigma_values
-        - nu
-        * np.array(
-            [
-                sigma_values[1] + sigma_values[2],
-                sigma_values[2] + sigma_values[0],
-                sigma_values[0] + sigma_values[1],
-            ]
-        )
-    )
-
-    # Return as Strain objects (dimensionless)
-    return StrainArray([Strain(float(e), "") for e in epsilon])
+    # Return as StrainTensor. Unit is dimensionless ("")
+    return StrainTensor.from_array(epsilon_vals, unit="")
 
 
 def energia_deformacion_volumetrica(
-    sigma: StressArray, epsilon: StrainArray
+    sigma: StressTensor, epsilon: StrainTensor
 ) -> VolumetricEnergy:
     """
-    Energía de deformación por unidad de volumen:
-        U = 1/2 * Σ (sigma_i * epsilon_i)
-
-    sigma: StressArray (todas convertibles a float)
-    epsilon: StrainArray (dimensionless)
-    return: Stress en unidades base
+    U = 1/2 * sum(sigma_i * epsilon_i)
     """
+    if len(sigma.data) != len(epsilon.data):
+        raise ValueError("Dimensions mismatch")
 
-    if len(sigma) != len(epsilon):
-        raise ValueError("sigma y epsilon deben tener la misma dimensión")
+    sigma_vals = sigma.data  # Pa
+    epsilon_vals = epsilon.data  # Dimensionless
 
-    # Convertir todo a base units
-    sigma_values = sigma.to_np_array().astype(float)  # floats
-    epsilon_values = np.array([float(e) for e in epsilon], dtype=float)
+    # Result is J/m^3 (equivalent to Pa)
+    U_value = 0.5 * np.sum(sigma_vals * epsilon_vals)
 
-    # Energía (float en unidades base, ej. MPa)
-    U_value = 0.5 * np.sum(sigma_values * epsilon_values)
-
-    # Resulta en Stress pero es energía por volumen (1 kPa = 1 J/m³)
     return VolumetricEnergy(U_value, "J/m³")
 
 
-epsilon_1 = deformacion_elastica(E, nu, sigma_1_etapa)
-epsilon_2 = deformacion_elastica(E, nu, sigma_2_etapa)
+# --- Execution ---
 
-U_1 = energia_deformacion_volumetrica(sigma_1_etapa, epsilon_1)
-U_2 = energia_deformacion_volumetrica(sigma_2_etapa, epsilon_2)
+epsilon_1_etapa = deformacion_elastica(E, nu, sigma_1_etapa)
+epsilon_2_etapa = deformacion_elastica(E, nu, sigma_2_etapa)
+epsilon_3_etapa = deformacion_elastica(E, nu, sigma_3_etapa)
 
-print("Elastic strains:", epsilon_1)
-print("Elastic strains:", epsilon_2)
+U_1 = energia_deformacion_volumetrica(sigma_1_etapa, epsilon_1_etapa)
+U_2 = energia_deformacion_volumetrica(sigma_2_etapa, epsilon_2_etapa)
+U_3 = energia_deformacion_volumetrica(sigma_3_etapa, epsilon_3_etapa)
 
-print("Sigma de etapa 1:", sigma_1_etapa)
-print("Sigma de etapa 2:", sigma_2_etapa)
+print(f"\nEnergy 1: {U_1}")
+print(f"\nEnergy 2: {U_2}")
+print(f"\nEnergy 3: {U_3}")
+print("\n" + "-" * 40)
 
-print("Energía de deformación etapa 1:", U_1)
-print("Energía de deformación etapa 2:", U_2)
+
+sigma_1_matrix = StressTensor.from_array(np.diag(sigma_1_etapa.data), unit="kPa")
+sigma_1_matrix = sigma_1_matrix.convert("kPa")
+epsilon_1_matrix = StrainTensor.from_array(np.diag(epsilon_1_etapa.data), unit="")
+
+sigma_2_matrix = StressTensor.from_array(np.diag(sigma_2_etapa.data), unit="kPa")
+sigma_2_matrix = sigma_2_matrix.convert("kPa")
+epsilon_2_matrix = StrainTensor.from_array(np.diag(epsilon_2_etapa.data), unit="")
+
+sigma_3_matrix = StressTensor.from_array(np.diag(sigma_3_etapa.data), unit="kPa")
+sigma_3_matrix = sigma_3_matrix.convert("kPa")
+epsilon_3_matrix = StrainTensor.from_array(np.diag(epsilon_3_etapa.data), unit="")
+
+print(f"\nDiagonal Matrix from σ (1da etapa): {sigma_1_matrix}")
+print(f"\nDiagonal Matrix from ε (1da etapa): {epsilon_1_matrix}")
+print("\n" + "-" * 40)
+
+
+print(f"\nDiagonal Matrix from σ (2da etapa): {sigma_2_matrix}")
+print(f"\nDiagonal Matrix from ε (2da etapa): {epsilon_2_matrix}")
+print("\n" + "-" * 40)
+
+
+print(f"\nDiagonal Matrix from σ (3da etapa): {sigma_3_matrix}")
+print(f"\nDiagonal Matrix from ε (3da etapa): {epsilon_3_matrix}")
