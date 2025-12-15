@@ -140,7 +140,7 @@ class BaseMeasure:
         return self.__class__(base_diff / self.factor, self.unit)
 
     def __mul__(self, other):
-        from units.registry import MultiplicationRegistry
+        from units.registries import MultiplicationRegistry
 
         if isinstance(other, (int, float)):
             return self.__class__(self.value * other, self.unit)
@@ -154,8 +154,14 @@ class BaseMeasure:
         return self.__mul__(other)
 
     def __truediv__(self, other):
+        from units.registries import DivisionRegistry
+
         if isinstance(other, (int, float)):
             return self.__class__(self.value / other, self.unit)
+
+        if isinstance(other, BaseMeasure):
+            return DivisionRegistry.resolve(self, other)
+
         return NotImplemented
 
     # TODO: IMPLEMENT DIVISION BETWEEN DIFFERENT UNITS (REGISTRY)

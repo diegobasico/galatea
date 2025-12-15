@@ -1,4 +1,4 @@
-from units.registry import MultiplicationRegistry
+from units.registries import MultiplicationRegistry
 from units.measures import *  # noqa: F403
 
 registry = MultiplicationRegistry()

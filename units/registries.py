@@ -5,8 +5,6 @@ from units.dimensions import Dimension
 
 RuleKey = tuple[Dimension, Dimension]
 
-# TODO: WRITE DIVISION REGISTRY
-
 
 class MultiplicationRegistry:
     _rules: dict[RuleKey, Type[BaseMeasure]] = {}
@@ -45,5 +43,41 @@ class MultiplicationRegistry:
 
         base_value = a.to_base_units() * b.to_base_units()
 
-        # Result is constructed in base units
-        return result_cls(base_value, result_cls._unit_enum.__members__["Pa"].display)
+        base_unit = next(iter(result_cls._unit_enum)).display
+        return result_cls(base_value, base_unit)
+
+
+class DivisionRegistry:
+    _rules: dict[RuleKey, Type[BaseMeasure]] = {}
+
+    @classmethod
+    def register(
+        cls,
+        numerator: Type[BaseMeasure],
+        denominator: Type[BaseMeasure],
+        result: Type[BaseMeasure],
+    ):
+        """
+        Declare that:
+            numerator ÷ denominator → result
+        """
+        key = (numerator.dimension, denominator.dimension)
+        cls._rules[key] = result
+
+    @classmethod
+    def resolve(cls, a: BaseMeasure, b: BaseMeasure) -> BaseMeasure:
+        key = (a.dimension, b.dimension)
+
+        if key not in cls._rules:
+            raise TypeError(
+                f"No division rule for {a.dimension.name} ÷ {b.dimension.name}"
+            )
+
+        result_cls = cls._rules[key]
+
+        base_value = a.to_base_units() / b.to_base_units()
+
+        # Construct result in BASE units, no hardcoding
+        base_unit = next(iter(result_cls._unit_enum)).display
+
+        return result_cls(base_value, base_unit)
