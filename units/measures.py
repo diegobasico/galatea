@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 
-from units.base_models import BaseUnit, BaseTensor, BaseMeasure
+from units.base_models import BaseUnit, BaseMeasure
 from units.dimensions import Dimension
+
+
+class Scalar(float):
+    pass
 
 
 class Dimensionless(BaseUnit):
@@ -14,10 +18,10 @@ class Strain(BaseMeasure):
     dimension = Dimension.STRAIN
 
 
-class StrainTensor(BaseTensor):
-    @classmethod
-    def _element_type(cls):
-        return Strain
+# class StrainTensor(BaseTensor):
+#     @classmethod
+#     def _element_type(cls):
+#         return Strain
 
 
 class StressUnit(BaseUnit):
@@ -33,10 +37,10 @@ class Stress(BaseMeasure):
     dimension = Dimension.STRESS
 
 
-class StressTensor(BaseTensor):
-    @classmethod
-    def _element_type(cls):
-        return Stress
+# class StressTensor(BaseTensor):
+#     @classmethod
+#     def _element_type(cls):
+#         return Stress
 
 
 class SpecificWeightUnit(BaseUnit):

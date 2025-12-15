@@ -14,9 +14,3 @@ division.register(
     Strain,
     Stress,
 )
-
-division.register(
-    Length,
-    Length,
-    Strain,  # dimensionless
-)

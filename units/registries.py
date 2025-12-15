@@ -65,7 +65,11 @@ class DivisionRegistry:
         cls._rules[key] = result
 
     @classmethod
-    def resolve(cls, a: BaseMeasure, b: BaseMeasure) -> BaseMeasure:
+    def resolve(cls, a: BaseMeasure, b: BaseMeasure):
+        # SAME DIMENSION → scalar
+        if a.dimension is b.dimension:
+            return a.to_base_units() / b.to_base_units()
+
         key = (a.dimension, b.dimension)
 
         if key not in cls._rules:
@@ -74,10 +78,6 @@ class DivisionRegistry:
             )
 
         result_cls = cls._rules[key]
-
         base_value = a.to_base_units() / b.to_base_units()
-
-        # Construct result in BASE units, no hardcoding
         base_unit = next(iter(result_cls._unit_enum)).display
-
         return result_cls(base_value, base_unit)

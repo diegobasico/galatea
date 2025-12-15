@@ -79,7 +79,7 @@ def corrected_gamma_for_Ngamma(
         return gamma_sub
 
     # NF entre la base y B
-    return gamma_sub + (zw.value - Df.value) / B.value * (soil.gamma_nat - gamma_sub)
+    return gamma_sub + (zw - Df) / B * (soil.gamma_nat - gamma_sub)
 
 
 # ------------------------------------------------------------------
@@ -87,7 +87,7 @@ def corrected_gamma_for_Ngamma(
 # ------------------------------------------------------------------
 
 
-def local_shear_parameters(c: float, phi: float) -> tuple[Stress, float]:
+def local_shear_parameters(c: Stress, phi: float) -> tuple[Stress, float]:
     """
     Returns c and ɸ for local shear failure. (Terzaghi, 1943)
     """
@@ -95,7 +95,7 @@ def local_shear_parameters(c: float, phi: float) -> tuple[Stress, float]:
     c = c * 2 / 3
     phi = np.degrees(np.atan(np.tan(np.radians(phi)) * 2 / 3))
 
-    return Stress(c, "kg/cm²"), phi
+    return c, phi
 
 
 def terzaghi_factors(phi: float) -> tuple[float, float, float]:
@@ -131,7 +131,7 @@ def terzaghi_bearing_capacity(
         raise ValueError("Missing foundation shape.")
 
     if local:
-        c, phi = local_shear_parameters(soil.c.value, soil.phi)
+        c, phi = local_shear_parameters(soil.c, soil.phi)
         bearing_soil = Soil(
             c,
             phi,
@@ -277,7 +277,7 @@ def display_factors_table(method: str, local_shear_failure: bool = False):
         for phi in range(0, 42):
             match method, local_shear_failure:
                 case "Terzaghi", True:
-                    _, phi_local = local_shear_parameters(0, phi)
+                    _, phi_local = local_shear_parameters(Stress(0, "kg/cm²"), phi)
                     Nc, Nq, Ng = map(float, terzaghi_factors(phi_local))
                 case "Terzaghi", False:
                     Nc, Nq, Ng = map(float, terzaghi_factors(phi))
