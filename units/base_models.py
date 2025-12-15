@@ -115,6 +115,9 @@ class BaseMeasure:
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}: {self.value:g} {self.display_unit}>"
 
+    def __format__(self, format_spec: str):
+        return format(self.value, format_spec)
+
     def __hash__(self):
         return hash((self.to_base_units(), self._unit_enum))
 
@@ -154,6 +157,8 @@ class BaseMeasure:
         if isinstance(other, (int, float)):
             return self.__class__(self.value / other, self.unit)
         return NotImplemented
+
+    # TODO: IMPLEMENT DIVISION BETWEEN DIFFERENT UNITS (REGISTRY)
 
     def _cmp_value(self, other):
         if isinstance(other, BaseMeasure):

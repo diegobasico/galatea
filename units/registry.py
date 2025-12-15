@@ -5,6 +5,8 @@ from units.dimensions import Dimension
 
 RuleKey = tuple[Dimension, Dimension]
 
+# TODO: WRITE DIVISION REGISTRY
+
 
 class MultiplicationRegistry:
     _rules: dict[RuleKey, Type[BaseMeasure]] = {}
