@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional
 from dataclasses import dataclass
 
 import numpy as np
@@ -12,29 +11,51 @@ from units.measures import Stress, SpecificWeight, Length
 # Constants
 # ------------------------------------------------------------------
 
-GAMMA_W = SpecificWeight(1, "g/cm³")  # Water unit weight
-FACTOR_SEGURIDAD = 3.0
+_GAMMA_W = SpecificWeight(1, "g/cm³")  # Water unit weight
+_FACTOR_SEGURIDAD = 3.0
 
 # ------------------------------------------------------------------
 # Geometry & Soil Models
 # ------------------------------------------------------------------
 
 
-class FootingShape(Enum):
+@dataclass(frozen=True, kw_only=True)
+class _Foundation:
+    Df: Length
+    width: Length
+
+
+class _FoundationShape(Enum):
     square = "square"
     continuous = "continuous"
     circular = "circular"
 
 
 @dataclass(frozen=True)
-class Footing:
-    Df: Length
-    width: Length
-    shape: Optional[FootingShape] = None
-    length: Optional[Length] = None
-    inclination: Optional[float] = (
-        0  # α = inclination of the load with respect to the vertical
-    )
+class Footing(_Foundation):
+    shape: _FoundationShape | str
+
+    def __post_init__(self):
+        if isinstance(self.shape, str):
+            try:
+                object.__setattr__(
+                    self,
+                    "shape",
+                    _FoundationShape(self.shape),
+                )
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid foundation shape: {self.shape!r}. "
+                    f"Valid values: {[s.value for s in _FoundationShape]}"
+                ) from e
+
+
+@dataclass(frozen=True)
+class Mat(_Foundation):
+    length: Length
+    inclination: float = 0
+    # inclination of load with respect to vertical
+    # α is always in degrees
 
 
 @dataclass(frozen=True)
@@ -51,7 +72,7 @@ class Soil:
 # ------------------------------------------------------------------
 
 
-def effective_overburden(soil: Soil, Df: Length) -> Stress:
+def _effective_overburden(soil: Soil, Df: Length) -> Stress:
     """
     Effective vertical stress at footing base. (Coduto, 2021)
     Returns Stress.
@@ -60,17 +81,17 @@ def effective_overburden(soil: Soil, Df: Length) -> Stress:
     if soil.groundwater_table >= Df:
         return soil.gamma_nat * Df
 
-    gamma_sub = soil.gamma_sat - GAMMA_W
+    gamma_sub = soil.gamma_sat - _GAMMA_W
 
     return soil.gamma_nat * soil.groundwater_table + gamma_sub * (
         Df - soil.groundwater_table
     )
 
 
-def corrected_gamma_for_Ngamma(
+def _corrected_gamma_for_Ngamma(
     soil: Soil, Df: Length, B: Length, zw: Length
 ) -> SpecificWeight:
-    gamma_sub = soil.gamma_sat - GAMMA_W
+    gamma_sub = soil.gamma_sat - _GAMMA_W
 
     if zw >= Df + B:
         return soil.gamma_nat
@@ -78,7 +99,7 @@ def corrected_gamma_for_Ngamma(
     if zw <= Df:
         return gamma_sub
 
-    # NF entre la base y B
+    # NF entre la base y base + B
     return gamma_sub + (zw - Df) / B * (soil.gamma_nat - gamma_sub)
 
 
@@ -87,7 +108,7 @@ def corrected_gamma_for_Ngamma(
 # ------------------------------------------------------------------
 
 
-def local_shear_parameters(c: Stress, phi: float) -> tuple[Stress, float]:
+def _local_shear_parameters(c: Stress, phi: float) -> tuple[Stress, float]:
     """
     Returns c and ɸ for local shear failure. (Terzaghi, 1943)
     """
@@ -98,7 +119,7 @@ def local_shear_parameters(c: Stress, phi: float) -> tuple[Stress, float]:
     return c, phi
 
 
-def terzaghi_factors(phi: float) -> tuple[float, float, float]:
+def _terzaghi_factors(phi: float) -> tuple[float, float, float]:
     """
     Terzaghi bearing capacity factors for general shear failure. (Coduto, 2021)
     """
@@ -120,18 +141,34 @@ def terzaghi_factors(phi: float) -> tuple[float, float, float]:
 
 
 def terzaghi_bearing_capacity(
-    footing: Footing, soil: Soil, local: bool = False
+    foundation: Footing, soil: Soil, local: bool = False
 ) -> Stress:
     """
-    Ultimate bearing capacity (Terzaghi, 1943).
-    Returns Stress.
+    Computes the ultimate bearing capacity using Terzaghi's formulation.
+
+    Parameters
+    ----------
+    foundation : Footing
+        Shallow foundation with validated shape and dimensions.
+    soil : Soil
+        Soil parameters at foundation level.
+    local : bool, optional
+        If True, applies local shear failure correction (Terzaghi, 1943).
+
+    Returns
+    -------
+    Stress
+        Ultimate bearing capacity (σ_u).
+
+    Notes
+    -----
+    - Shape factors follow Terzaghi (1943).
+    - Effective overburden stress accounts for groundwater position.
+    - Assumes vertical loading and horizontal ground surface.
     """
 
-    if not footing.shape:
-        raise ValueError("Missing foundation shape.")
-
     if local:
-        c, phi = local_shear_parameters(soil.c, soil.phi)
+        c, phi = _local_shear_parameters(soil.c, soil.phi)
         bearing_soil = Soil(
             c,
             phi,
@@ -145,24 +182,26 @@ def terzaghi_bearing_capacity(
     zw = bearing_soil.groundwater_table
     phi = bearing_soil.phi
     c = bearing_soil.c
-    D = footing.Df
-    B = footing.width
-    gamma_corr = corrected_gamma_for_Ngamma(soil=soil, Df=D, B=B, zw=zw)
+    D = foundation.Df
+    B = foundation.width
+    gamma_corr = _corrected_gamma_for_Ngamma(soil=soil, Df=D, B=B, zw=zw)
 
-    sigma_v_eff = effective_overburden(bearing_soil, D)
-    Nc, Nq, Ngamma = terzaghi_factors(phi)
+    sigma_v_eff = _effective_overburden(bearing_soil, D)
+    Nc, Nq, Ngamma = _terzaghi_factors(phi)
     # Nc, Nq, Ngamma = Nc, Nq, 0.49  # HACK TRYING TO COMPARE WITH SOLVED MODELS
-    print(f"Nc = {Nc:.2f}, Nq = {Nq:.2f}, Nγ = {Ngamma:.2f}")
+    # print(f"Nc = {Nc:.2f}, Nq = {Nq:.2f}, Nγ = {Ngamma:.2f}\n")
 
-    match footing.shape:
-        case FootingShape.continuous:
-            qu = c * Nc + sigma_v_eff * Nq + gamma_corr * footing.width * (0.5 * Ngamma)
+    match foundation.shape:
+        case _FoundationShape.continuous:
+            qu = c * Nc + sigma_v_eff * Nq + gamma_corr * B * (0.5 * Ngamma)
 
-        case FootingShape.square:
+        case _FoundationShape.square:
             qu = c * (1.3 * Nc) + sigma_v_eff * Nq + gamma_corr * B * (0.4 * Ngamma)
 
-        case FootingShape.circular:
+        case _FoundationShape.circular:
             qu = c * (1.3 * Nc) + sigma_v_eff * Nq + gamma_corr * B * (0.3 * Ngamma)
+        case _:
+            raise ValueError(f"Unsupported foundation shape: {foundation.shape}")
 
     return qu
 
@@ -172,7 +211,7 @@ def terzaghi_bearing_capacity(
 # ------------------------------------------------------------------
 
 
-def general_factors(phi: float) -> tuple[float, float, float]:
+def _general_factors(phi: float) -> tuple[float, float, float]:
     """
     Bearing capacity factors for general shear failure. (Das, 2019)
     """
@@ -189,21 +228,18 @@ def general_factors(phi: float) -> tuple[float, float, float]:
     return Nc, Nq, Ngamma
 
 
-def shape_depth_inclination_factors(Nq: float, Nc: float, footing: Footing, soil: Soil):
+def _shape_depth_inclination_factors(Nq: float, Nc: float, foundation: Mat, soil: Soil):
     """
     Outputs factors for the general bearing capacity equation. (Das, 2019)
     """
 
-    if not footing.length or footing.inclination is None:
-        raise ValueError("Missing foundation length or inclination.")
-
     phi = soil.phi
     phi_rad = np.radians(phi)
 
-    B = footing.width.value
-    L = footing.length.value
-    D = footing.Df.value
-    inclination = footing.inclination
+    B = foundation.width.value
+    L = foundation.length.value
+    D = foundation.Df.value
+    inclination = foundation.inclination
 
     # Shape factors (De Beer, 1970)
     S_c = 1 + (B / L) * (Nq / Nc)
@@ -229,32 +265,57 @@ def shape_depth_inclination_factors(Nq: float, Nc: float, footing: Footing, soil
 
 
 def general_bearing_capacity(
-    footing: Footing,
+    foundation: Mat,
     soil: Soil,
 ) -> Stress:
     """
-    Ultimate bearing capacity (Das, 2019).
-    Returns Stress.
+    Computes the ultimate bearing capacity using the general bearing
+    capacity equation (Das, 2019).
+
+    Parameters
+    ----------
+    foundation : Mat
+        Rectangular foundation with finite length, width, and load inclination.
+    soil : Soil
+        Soil parameters at foundation level.
+
+    Returns
+    -------
+    Stress
+        Ultimate bearing capacity (σ_u).
+
+    Notes
+    -----
+    - Includes shape, depth, and inclination factors.
+    - Load inclination angle is assumed in degrees.
+    - Groundwater corrections follow linear interpolation.
     """
 
     zw = soil.groundwater_table
     phi = soil.phi
     c = soil.c
-    D = footing.Df
-    B = footing.width
-    gamma_corr = corrected_gamma_for_Ngamma(soil=soil, Df=D, B=B, zw=zw)
+    D = foundation.Df
+    B = foundation.width
+    gamma_corr = _corrected_gamma_for_Ngamma(soil=soil, Df=D, B=B, zw=zw)
 
-    sigma_v_eff = effective_overburden(soil, footing.Df)
-    Nc, Nq, Ngamma = general_factors(phi)
-    print(f"Nc = {Nc:.2f}, Nq = {Nq:.2f}, Nγ = {Ngamma:.2f}")
+    sigma_v_eff = _effective_overburden(soil, foundation.Df)
+    Nc, Nq, Ngamma = _general_factors(phi)
+    # print(f"Nc = {Nc:.2f}, Nq = {Nq:.2f}, Nγ = {Ngamma:.2f}\n")
 
     S_c, S_q, S_gamma, D_c, D_q, D_gamma, I_c, I_q, I_gamma = (
-        shape_depth_inclination_factors(Nq=Nq, Nc=Nc, footing=footing, soil=soil)
+        _shape_depth_inclination_factors(
+            Nq=Nq,
+            Nc=Nc,
+            foundation=foundation,
+            soil=soil,
+        )
     )
 
-    print(
-        f"S_c = {S_c:.2f}, S_q = {S_q:.2f}, S_γ = {S_gamma:.2f},\nD_c = {D_c:.2f}, D_q = {D_q:.2f}, D_γ = {D_gamma:.2f},\nI_c = {I_c:.2f}, I_q = {I_q:.2f}, I_γ = {I_gamma:.2f}"
-    )
+    # print(
+    #     f"S_c = {S_c:.2f}, S_q = {S_q:.2f}, S_γ = {S_gamma:.2f}\n"
+    #     f"D_c = {D_c:.2f}, D_q = {D_q:.2f}, D_γ = {D_gamma:.2f}\n"
+    #     f"I_c = {I_c:.2f}, I_q = {I_q:.2f}, I_γ = {I_gamma:.2f}\n"
+    # )
 
     qu = (
         c * (Nc * S_c * D_c * I_c)
@@ -270,34 +331,54 @@ def general_bearing_capacity(
 # ------------------------------------------------------------------
 
 
-def display_factors_table(method: str, local_shear_failure: bool = False):
+def bearing_factors_table(
+    method: str, local_shear_failure: bool = False
+) -> pl.DataFrame:
+    """
+    Displays bearing capacity factors (Nc, Nq, Nγ) for φ = 0–41°.
+
+    Parameters
+    ----------
+    method : str
+        "Terzaghi" or "General".
+    local_shear_failure : bool, optional
+        Applies local shear correction (Terzaghi only).
+    """
+
+    if method not in {"Terzaghi", "General"}:
+        raise ValueError("Method must be 'Terzaghi' or 'General'.")
+
+    if method == "Terzaghi":
+        if local_shear_failure:
+
+            def factors(phi: float):
+                _, phi_local = _local_shear_parameters(Stress(0, "kg/cm²"), phi)
+                return _terzaghi_factors(phi_local)
+        else:
+
+            def factors(phi: float):
+                return _terzaghi_factors(phi)
+    else:
+
+        def factors(phi: float):
+            return _general_factors(phi)
+
+    rows = []
+
+    for phi in range(0, 42):
+        Nc, Nq, Ngamma = map(float, factors(phi))
+        rows.append(
+            {
+                "phi": phi,
+                "Nc": Nc,
+                "Nq": Nq,
+                "Nγ": Ngamma,
+            }
+        )
+
     with pl.Config(set_tbl_rows=-1, set_tbl_cols=-1, set_float_precision=2):
-        rows = []
-
-        for phi in range(0, 42):
-            match method, local_shear_failure:
-                case "Terzaghi", True:
-                    _, phi_local = local_shear_parameters(Stress(0, "kg/cm²"), phi)
-                    Nc, Nq, Ng = map(float, terzaghi_factors(phi_local))
-                case "Terzaghi", False:
-                    Nc, Nq, Ng = map(float, terzaghi_factors(phi))
-                case "General", _:
-                    Nc, Nq, Ng = map(float, general_factors(phi))
-                case _, _:
-                    raise ValueError("Method must be Terzaghi or General.")
-
-            rows.append(
-                {
-                    "phi": phi,
-                    "Nc": Nc,
-                    "Nq": Nq,
-                    "Nγ": Ng,
-                }
-            )
-
         df = pl.DataFrame(rows)
-        print(f"\nMethod: {method}\nLocal Shear Failure: {local_shear_failure}\n")
-        print(df)
+        return df
 
 
 # ------------------------------------------------------------------
@@ -306,48 +387,38 @@ def display_factors_table(method: str, local_shear_failure: bool = False):
 
 
 if __name__ == "__main__":
-    footing = Footing(
-        Df=Length(1, "m"),
-        width=Length(1, "m"),
-        length=Length(1, "m"),
-        shape=FootingShape.square,
-    )
-
-    soil = Soil(
+    test_soil = Soil(
         c=Stress(0.237803411379647, "kg/cm²"),
         phi=14.099078143577,
         gamma_nat=SpecificWeight(1.83146129445547, "g/cm³"),
         gamma_sat=SpecificWeight(1.61277588759615, "g/cm³"),
         groundwater_table=Length(2.90, "m"),
+    )
+
+    test_footing = Footing(
+        Df=Length(1, "m"),
+        width=Length(1, "m"),
+        shape="square",
+    )
+
+    test_mat = Mat(
+        Df=Length(0.5, "m"),
+        width=Length(6, "m"),
+        length=Length(11, "m"),
     )
 
     print("\nTerzaghi:\n" + "-" * 14)
 
-    qu = terzaghi_bearing_capacity(footing, soil, local=True)
-    q_adm = qu / FACTOR_SEGURIDAD
+    qu = terzaghi_bearing_capacity(test_footing, test_soil, local=True)
+    q_adm = qu / _FACTOR_SEGURIDAD
 
     print(f"σ_u  : {qu.convert('kg/cm²'):.3f}")
     print(f"σ_adm: {q_adm.convert('kg/cm²'):.3f}")
 
-    footing = Footing(
-        Df=Length(0.5, "m"),
-        width=Length(6, "m"),
-        length=Length(11, "m"),
-        shape=FootingShape.square,
-    )
-
-    soil = Soil(
-        c=Stress(0.237803411379647, "kg/cm²"),
-        phi=14.099078143577,
-        gamma_nat=SpecificWeight(1.83146129445547, "g/cm³"),
-        gamma_sat=SpecificWeight(1.61277588759615, "g/cm³"),
-        groundwater_table=Length(2.90, "m"),
-    )
-
     print("\nGeneral:\n" + "-" * 14)
 
-    qu = general_bearing_capacity(footing, soil)
-    q_adm = qu / FACTOR_SEGURIDAD
+    qu = general_bearing_capacity(test_mat, test_soil)
+    q_adm = qu / _FACTOR_SEGURIDAD
 
     print(f"σ_u  : {qu.convert('kg/cm²'):.3f}")
     print(f"σ_adm: {q_adm.convert('kg/cm²'):.3f}")
