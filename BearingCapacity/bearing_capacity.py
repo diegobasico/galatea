@@ -1,8 +1,9 @@
+from typing import cast
 import numpy as np
 import polars as pl
 
 from units.units import Stress, SpecificWeight, Length
-from BearingCapacity.objects import Soil, Footing, Mat
+from BearingCapacity.objects import Soil, Footing, Mat, FoundationShape
 
 
 # ------------------------------------------------------------------
@@ -29,7 +30,7 @@ def _effective_overburden(soil: Soil, Df: Length) -> Stress:
     """
 
     if soil.groundwater_table >= Df:
-        return soil.gamma_nat * Df
+        return cast(Stress, soil.gamma_nat * Df)
 
     gamma_sub = soil.gamma_sat - _GAMMA_W
 
@@ -140,13 +141,13 @@ def terzaghi_bearing_capacity(
     Nc, Nq, Ngamma = _terzaghi_factors(phi)
 
     match foundation.shape:
-        case "continuous":
+        case FoundationShape.continuous:
             qu = c * Nc + sigma_v_eff * Nq + gamma_corr * B * (0.5 * Ngamma)
 
-        case "square":
+        case FoundationShape.square:
             qu = c * (1.3 * Nc) + sigma_v_eff * Nq + gamma_corr * B * (0.4 * Ngamma)
 
-        case "circular":
+        case FoundationShape.circular:
             qu = c * (1.3 * Nc) + sigma_v_eff * Nq + gamma_corr * B * (0.3 * Ngamma)
         case _:
             raise ValueError(f"Unsupported foundation shape: {foundation.shape}")
@@ -353,13 +354,13 @@ if __name__ == "__main__":
     qu = terzaghi_bearing_capacity(test_footing, test_soil, local=True)
     q_adm = qu / _FACTOR_SEGURIDAD
 
-    print(f"σ_u  : {qu.convert('kg/cm²'):.3f}")
-    print(f"σ_adm: {q_adm.convert('kg/cm²'):.3f}")
+    print(f"σ_u  : {qu.to('kg/cm²'):.3f}")
+    print(f"σ_adm: {q_adm.to('kg/cm²'):.3f}")
 
     print("\nGeneral:\n" + "-" * 14)
 
     qu = general_bearing_capacity(test_mat, test_soil)
     q_adm = qu / _FACTOR_SEGURIDAD
 
-    print(f"σ_u  : {qu.convert('kg/cm²'):.3f}")
-    print(f"σ_adm: {q_adm.convert('kg/cm²'):.3f}")
+    print(f"σ_u  : {qu.to('kg/cm²'):.3f}")
+    print(f"σ_adm: {q_adm.to('kg/cm²'):.3f}")

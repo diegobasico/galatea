@@ -3,9 +3,6 @@
 from units.base_models import BaseMeasure, BaseUnit
 from units.dimensions import Dimension
 
-
-# --- Dimensions ---
-
 # --- Dimensions ---
 
 FORCE = Dimension(M=1, L=1, T=-2)
@@ -47,6 +44,7 @@ class StressUnit(BaseUnit):
     Pa = ("Pa", 1)
     kPa = ("kPa", 1e3)
     MPa = ("MPa", 1e6)
+    kg_cm2 = ("kg/cm²", 98066.500286389)
 
 
 class MomentUnit(BaseUnit):
@@ -61,6 +59,7 @@ class DensityUnit(BaseUnit):
 class SpecificWeightUnit(BaseUnit):
     N_m3 = ("N/m³", 1)
     kN_m3 = ("kN/m³", 1e3)
+    g_cm3 = ("g/cm³", 9806.6500286389)
 
 
 # --- Measures ---

@@ -3,7 +3,7 @@
 from __future__ import annotations
 from enum import Enum
 from dataclasses import dataclass
-from typing import Type
+from typing import Type, overload, Self
 
 from units.dimensions import Dimension
 from units.registry import resolve_dimension, register_dimension
@@ -91,22 +91,38 @@ class BaseMeasure(metaclass=MeasureMeta):
         object.__setattr__(self, "user_unit", unit)
 
     # ----------------------------
-    # Conversion
+    # Formatting
     # ----------------------------
 
     def __repr__(self):
-        if self.user_unit is not None:
-            val = self.value / self.user_unit.factor
-            return f"{val:g} {self.user_unit.display}"
+        val = self.value / self.user_unit.factor
+        return f"{val:g} {self.user_unit.display}"
 
-        return f"<Derived: {self.value:g} {self.dimension}>"
+    def __format__(self, format_spec: str):
+        val = self.value / self.user_unit.factor
+        return format(val, format_spec)
 
     # ----------------------------
     # Conversion
     # ----------------------------
 
-    def to(self, unit: BaseUnit):
-        if not isinstance(unit, self._unit_enum):
+    def to(self, unit: BaseUnit | str):
+        unit_enum = self._unit_enum
+
+        # resolve string → enum
+        if isinstance(unit, str):
+            if unit in unit_enum.__members__:
+                unit = unit_enum[unit]
+            else:
+                for m in unit_enum:
+                    if m.display == unit:
+                        unit = m
+                        break
+                else:
+                    raise ValueError(f"Invalid unit '{unit}'")
+
+        # validate
+        if not isinstance(unit, unit_enum):
             raise TypeError("Invalid unit")
 
         return self.__class__(self.value / unit.factor, unit)
@@ -148,6 +164,12 @@ class BaseMeasure(metaclass=MeasureMeta):
         base_diff = self.value - other.value
         return self.__class__(base_diff / self.user_unit.factor, self.user_unit)
 
+    @overload
+    def __mul__(self, other: int | float) -> Self: ...
+
+    @overload
+    def __mul__(self, other: "BaseMeasure") -> BaseMeasure: ...
+
     def __mul__(self, other):
         if isinstance(other, (int, float)):
             return self.__class__(
@@ -161,6 +183,12 @@ class BaseMeasure(metaclass=MeasureMeta):
             )
 
         return NotImplemented
+
+    @overload
+    def __truediv__(self, other: int | float) -> Self: ...
+
+    @overload
+    def __truediv__(self, other: "BaseMeasure") -> float | BaseMeasure: ...
 
     def __truediv__(self, other):
         if isinstance(other, (int, float)):

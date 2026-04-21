@@ -4,20 +4,20 @@ from units.units import Stress, SpecificWeight, Length
 
 
 @dataclass(frozen=True, kw_only=True)
-class _Foundation:
+class Foundation:
     Df: Length
     width: Length
 
 
-class _FoundationShape(Enum):
+class FoundationShape(Enum):
     square = "square"
     continuous = "continuous"
     circular = "circular"
 
 
 @dataclass(frozen=True)
-class Footing(_Foundation):
-    shape: _FoundationShape | str
+class Footing(Foundation):
+    shape: FoundationShape | str
 
     def __post_init__(self):
         if isinstance(self.shape, str):
@@ -25,17 +25,17 @@ class Footing(_Foundation):
                 object.__setattr__(
                     self,
                     "shape",
-                    _FoundationShape(self.shape),
+                    FoundationShape(self.shape),
                 )
             except ValueError as e:
                 raise ValueError(
                     f"Invalid foundation shape: {self.shape!r}. "
-                    f"Valid values: {[s.value for s in _FoundationShape]}"
+                    f"Valid values: {[s.value for s in FoundationShape]}"
                 ) from e
 
 
 @dataclass(frozen=True)
-class Mat(_Foundation):
+class Mat(Foundation):
     length: Length
     inclination: float = 0
     # inclination of load with respect to vertical
