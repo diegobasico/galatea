@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 
 from units.units import Stress, SpecificWeight, Length
-from BearingCapacity.objects import Soil, Footing
+from BearingCapacity.objects import Soil, Footing, Mat
 
 
 # ------------------------------------------------------------------
@@ -140,13 +140,13 @@ def terzaghi_bearing_capacity(
     Nc, Nq, Ngamma = _terzaghi_factors(phi)
 
     match foundation.shape:
-        case _FoundationShape.continuous:
+        case "continuous":
             qu = c * Nc + sigma_v_eff * Nq + gamma_corr * B * (0.5 * Ngamma)
 
-        case _FoundationShape.square:
+        case "square":
             qu = c * (1.3 * Nc) + sigma_v_eff * Nq + gamma_corr * B * (0.4 * Ngamma)
 
-        case _FoundationShape.circular:
+        case "circular":
             qu = c * (1.3 * Nc) + sigma_v_eff * Nq + gamma_corr * B * (0.3 * Ngamma)
         case _:
             raise ValueError(f"Unsupported foundation shape: {foundation.shape}")

@@ -5,7 +5,7 @@ def main():
     s = Stress.MPa(10)
     L = Length.m(2)
 
-    result = s * L * L
+    result = s * (L / L)
     print(result)
 
 

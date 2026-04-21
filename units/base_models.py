@@ -111,10 +111,6 @@ class BaseMeasure(metaclass=MeasureMeta):
 
         return self.__class__(self.value / unit.factor, unit)
 
-    # ----------------------------
-    # Algebra
-    # ----------------------------
-
     def _resolve(self, value: float, dim: Dimension):
         cls = resolve_dimension(dim)
 
@@ -128,10 +124,34 @@ class BaseMeasure(metaclass=MeasureMeta):
         base_unit = min(cls._unit_enum, key=lambda u: u.factor)
         return cls(value / base_unit.factor, base_unit)
 
+    # ----------------------------
+    # Algebra
+    # ----------------------------
+
+    def __add__(self, other):
+        if not isinstance(other, BaseMeasure):
+            return NotImplemented
+
+        if self.dimension != other.dimension:
+            raise TypeError("Cannot add measures with different dimensions")
+
+        base_sum = self.value + other.value
+        return self.__class__(base_sum / self.user_unit.factor, self.user_unit)
+
+    def __sub__(self, other):
+        if not isinstance(other, BaseMeasure):
+            return NotImplemented
+
+        if self.dimension != other.dimension:
+            raise TypeError("Cannot subtract measures with different dimensions")
+
+        base_diff = self.value - other.value
+        return self.__class__(base_diff / self.user_unit.factor, self.user_unit)
+
     def __mul__(self, other):
         if isinstance(other, (int, float)):
             return self.__class__(
-                self.value / self.user_unit.factor * other, self.user_unit
+                (self.value * other) / self.user_unit.factor, self.user_unit
             )
 
         if isinstance(other, BaseMeasure):
@@ -142,13 +162,10 @@ class BaseMeasure(metaclass=MeasureMeta):
 
         return NotImplemented
 
-    def __rmul__(self, other):
-        return self.__mul__(other)
-
     def __truediv__(self, other):
         if isinstance(other, (int, float)):
             return self.__class__(
-                self.value / self.user_unit.factor / other, self.user_unit
+                (self.value / other) / self.user_unit.factor, self.user_unit
             )
 
         if isinstance(other, BaseMeasure):
@@ -161,3 +178,35 @@ class BaseMeasure(metaclass=MeasureMeta):
             return self._resolve(val, dim)
 
         return NotImplemented
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    # ----------------------------
+    # Comparisons
+    # ----------------------------
+
+    def _cmp_value(self, other):
+        if isinstance(other, BaseMeasure):
+            if self.dimension != other.dimension:
+                raise TypeError("Cannot compare different dimensions")
+            return other.value  # already base units
+        return float(other)
+
+    def __eq__(self, other):
+        try:
+            return abs(self.value - self._cmp_value(other)) < 1e-9
+        except TypeError:
+            return False
+
+    def __lt__(self, other):
+        return self.value < self._cmp_value(other)
+
+    def __le__(self, other):
+        return self.value <= self._cmp_value(other)
+
+    def __gt__(self, other):
+        return self.value > self._cmp_value(other)
+
+    def __ge__(self, other):
+        return self.value >= self._cmp_value(other)

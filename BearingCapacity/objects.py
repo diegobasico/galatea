@@ -1,6 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass
-from units.measures import Stress, SpecificWeight, Length
+from units.units import Stress, SpecificWeight, Length
 
 
 @dataclass(frozen=True, kw_only=True)
