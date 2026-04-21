@@ -1,9 +1,12 @@
-from geo.bearing_capacity import bearing_factors_table
+from units.units import Stress, Length
 
 
 def main():
-    df = bearing_factors_table("Terzaghi")
-    print(df)
+    s = Stress.MPa(10)
+    L = Length.m(2)
+
+    result = s * L * L
+    print(result)
 
 
 if __name__ == "__main__":

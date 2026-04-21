@@ -1,22 +1,15 @@
+# units/base_models.py
+
 from __future__ import annotations
 from enum import Enum
-from dataclasses import dataclass, field
-from typing import overload, Any
-from typing_extensions import Self
+from dataclasses import dataclass
+from typing import Type
 
 from units.dimensions import Dimension
-
-# import numpy as np
-
-
-# T = TypeVar("T", bound="BaseTensor")
+from units.registry import resolve_dimension, register_dimension
 
 
 class BaseUnit(Enum):
-    """
-    Base class for all physical quantity units.
-    """
-
     def __init__(self, display: str, factor: float):
         self.display = display
         self.factor = factor
@@ -24,177 +17,147 @@ class BaseUnit(Enum):
     def __str__(self):
         return self.display
 
-    def __repr__(self):
-        # New format: <Unit: MPa>
-        return f"<{self.__class__.__name__}.{self.name}: {self.display}>"
+
+# ----------------------------
+# Metaclass
+# ----------------------------
+
+
+class MeasureMeta(type):
+    def __new__(mcls, name, bases, namespace):
+        cls = super().__new__(mcls, name, bases, namespace)
+
+        dim = namespace.get("dimension")
+        if dim is not None:
+            register_dimension(dim, cls)
+
+        return cls
+
+    def __getattr__(cls, name):
+        enum_cls = cls.__dict__.get("_unit_enum")
+
+        if enum_cls is None:
+            raise AttributeError
+
+        if name in enum_cls.__members__:
+            unit = enum_cls[name]
+
+            def factory(value: float):
+                return cls(value, unit)
+
+            return factory
+
+        raise AttributeError(f"{name} not valid for {cls.__name__}")
+
+
+# ----------------------------
+# BaseMeasure
+# ----------------------------
 
 
 @dataclass(frozen=True)
-class BaseMeasure:
+class BaseMeasure(metaclass=MeasureMeta):
     value: float
-    unit: str
-    user_unit: type[BaseUnit] = field(init=False)
-    factor: float = field(init=False)
-    display_unit: str = field(init=False)
-    _unit_enum: type[BaseUnit] = field(init=False, repr=False, compare=False)
-    dimension: Dimension = field(init=False, repr=False)
+    dimension: Dimension
+    _unit_enum: Type[BaseUnit]
+    user_unit: BaseUnit
 
-    def __post_init__(self):
-        # Dynamic enum resolution
-        if not hasattr(self.__class__, "_unit_enum"):
-            raise NotImplementedError(
-                f"{self.__class__.__name__} must define a class attribute '_unit_enum'"
-            )
-        if not hasattr(self.__class__, "dimension"):
-            raise NotImplementedError(
-                f"{self.__class__.__name__} must define a class attribute 'dimension'"
-            )
+    def __init__(self, value: float, unit: BaseUnit | str):
+        cls = self.__class__
 
-        child_unit_class = self._unit_enum
+        if not hasattr(cls, "_unit_enum") or not hasattr(cls, "dimension"):
+            raise TypeError(f"{cls.__name__} must define _unit_enum and dimension")
 
-        # Match by name or display string
-        if self.unit in child_unit_class.__members__:
-            parsed = child_unit_class[self.unit]
-        else:
-            matches = [
-                unit
-                for unit in child_unit_class
-                if getattr(unit, "display", None) == self.unit
-            ]
-            if not matches:
-                raise ValueError(f"Unknown unit: {self.unit} in {child_unit_class}")
-            parsed = matches[0]
+        unit_enum = cls._unit_enum
 
-        object.__setattr__(self, "user_unit", parsed)
-        object.__setattr__(self, "factor", getattr(parsed, "factor", parsed.value))
-        object.__setattr__(
-            self, "display_unit", getattr(parsed, "display", parsed.name)
-        )
-
-    def to_base_units(self) -> float:
-        return self.value * self.factor
-
-    def convert(self, dest_unit: str | BaseUnit) -> BaseMeasure:
-        """
-        Convert this measure to a different unit.
-        """
-        # 1. Resolve the destination unit to an Enum member
-        target_enum = None
-        enum_cls = self._unit_enum
-
-        if isinstance(dest_unit, BaseUnit):
-            target_enum = dest_unit
-        elif isinstance(dest_unit, str):
-            # Try finding by Name (e.g., "MPa")
-            if dest_unit in enum_cls.__members__:
-                target_enum = enum_cls[dest_unit]
+        # resolve unit
+        if isinstance(unit, str):
+            if unit in unit_enum.__members__:
+                unit = unit_enum[unit]
             else:
-                # Try finding by Display string (e.g., "MPa" or "N/m^2")
-                for member in enum_cls:
-                    if member.display == dest_unit:
-                        target_enum = member
+                for m in unit_enum:
+                    if m.display == unit:
+                        unit = m
                         break
+                else:
+                    raise ValueError(f"Invalid unit '{unit}'")
 
-        if target_enum is None:
-            raise ValueError(
-                f"Unit '{dest_unit}' is not valid for {self.__class__.__name__}"
+        # store base units
+        base_value = value * unit.factor
+
+        object.__setattr__(self, "value", base_value)
+        object.__setattr__(self, "dimension", cls.dimension)
+        object.__setattr__(self, "_unit_enum", unit_enum)
+        object.__setattr__(self, "user_unit", unit)
+
+    # ----------------------------
+    # Conversion
+    # ----------------------------
+
+    def __repr__(self):
+        if self.user_unit is not None:
+            val = self.value / self.user_unit.factor
+            return f"{val:g} {self.user_unit.display}"
+
+        return f"<Derived: {self.value:g} {self.dimension}>"
+
+    # ----------------------------
+    # Conversion
+    # ----------------------------
+
+    def to(self, unit: BaseUnit):
+        if not isinstance(unit, self._unit_enum):
+            raise TypeError("Invalid unit")
+
+        return self.__class__(self.value / unit.factor, unit)
+
+    # ----------------------------
+    # Algebra
+    # ----------------------------
+
+    def _resolve(self, value: float, dim: Dimension):
+        cls = resolve_dimension(dim)
+
+        if cls is None:
+            raise TypeError(
+                f"Cannot resolve dimension {dim}. "
+                f"This often happens due to operator precedence. "
+                f"Try adding parentheses, e.g. s * (L / L) instead of s * L / L."
             )
 
-        # 2. Perform Conversion
-        new_value = self.value * self.factor / target_enum.factor
-
-        # 3. Return new instance
-        # We pass the display string (or name) to let __post_init__ handle the rest
-        return self.__class__(new_value, target_enum.display)
-
-    def __float__(self):
-        return self.to_base_units()
-
-    def __str__(self) -> str:
-        return f"{self.value:g} {self.display_unit}"
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}: {self.value:g} {self.display_unit}>"
-
-    def __format__(self, format_spec: str):
-        return format(self.value, format_spec)
-
-    def __hash__(self):
-        return hash((self.to_base_units(), self._unit_enum))
-
-    def __add__(self, other):
-        if not isinstance(other, BaseMeasure):
-            return NotImplemented
-        if self._unit_enum is not other._unit_enum:
-            raise TypeError("Cannot add different physical dimensions")
-
-        base_sum = self.to_base_units() + other.to_base_units()
-        return self.__class__(base_sum / self.factor, self.unit)
-
-    def __sub__(self, other):
-        if not isinstance(other, BaseMeasure):
-            return NotImplemented
-        if self._unit_enum is not other._unit_enum:
-            raise TypeError("Cannot subtract different physical dimensions")
-
-        base_diff = self.to_base_units() - other.to_base_units()
-        return self.__class__(base_diff / self.factor, self.unit)
-
-    @overload
-    def __mul__(self, other: int | float) -> Self: ...
-
-    @overload
-    def __mul__(self, other: "BaseMeasure") -> Any: ...
+        base_unit = min(cls._unit_enum, key=lambda u: u.factor)
+        return cls(value / base_unit.factor, base_unit)
 
     def __mul__(self, other):
-        from units.registries import MultiplicationRegistry
-
         if isinstance(other, (int, float)):
-            return self.__class__(self.value * other, self.unit)
+            return self.__class__(
+                self.value / self.user_unit.factor * other, self.user_unit
+            )
 
         if isinstance(other, BaseMeasure):
-            return MultiplicationRegistry.resolve(self, other)
+            return self._resolve(
+                self.value * other.value,
+                self.dimension * other.dimension,
+            )
 
         return NotImplemented
 
     def __rmul__(self, other):
         return self.__mul__(other)
 
-    @overload
-    def __truediv__(self, other: int | float) -> Self: ...
-
-    @overload
-    def __truediv__(self, other: "BaseMeasure") -> float | BaseMeasure: ...
-
     def __truediv__(self, other):
         if isinstance(other, (int, float)):
-            return self.__class__(self.value / other, self.unit)
+            return self.__class__(
+                self.value / self.user_unit.factor / other, self.user_unit
+            )
 
         if isinstance(other, BaseMeasure):
-            from units.registries import DivisionRegistry
+            dim = self.dimension / other.dimension
+            val = self.value / other.value
 
-            return DivisionRegistry.resolve(self, other)
+            if dim.is_dimensionless():
+                return val
+
+            return self._resolve(val, dim)
 
         return NotImplemented
-
-    def _cmp_value(self, other):
-        if isinstance(other, BaseMeasure):
-            if self._unit_enum is not other._unit_enum:
-                raise TypeError("Cannot compare different physical dimensions")
-            return other.to_base_units()
-        return float(other)
-
-    def __eq__(self, other):
-        return self.to_base_units() == self._cmp_value(other)
-
-    def __lt__(self, other):
-        return self.to_base_units() < self._cmp_value(other)
-
-    def __le__(self, other):
-        return self.to_base_units() <= self._cmp_value(other)
-
-    def __gt__(self, other):
-        return self.to_base_units() > self._cmp_value(other)
-
-    def __ge__(self, other):
-        return self.to_base_units() >= self._cmp_value(other)

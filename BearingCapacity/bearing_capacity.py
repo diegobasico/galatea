@@ -1,10 +1,8 @@
-from enum import Enum
-from dataclasses import dataclass
-
 import numpy as np
 import polars as pl
 
-from units.measures import Stress, SpecificWeight, Length
+from units.units import Stress, SpecificWeight, Length
+from BearingCapacity.objects import Soil, Footing
 
 
 # ------------------------------------------------------------------
@@ -17,54 +15,6 @@ _FACTOR_SEGURIDAD = 3.0
 # ------------------------------------------------------------------
 # Geometry & Soil Models
 # ------------------------------------------------------------------
-
-
-@dataclass(frozen=True, kw_only=True)
-class _Foundation:
-    Df: Length
-    width: Length
-
-
-class _FoundationShape(Enum):
-    square = "square"
-    continuous = "continuous"
-    circular = "circular"
-
-
-@dataclass(frozen=True)
-class Footing(_Foundation):
-    shape: _FoundationShape | str
-
-    def __post_init__(self):
-        if isinstance(self.shape, str):
-            try:
-                object.__setattr__(
-                    self,
-                    "shape",
-                    _FoundationShape(self.shape),
-                )
-            except ValueError as e:
-                raise ValueError(
-                    f"Invalid foundation shape: {self.shape!r}. "
-                    f"Valid values: {[s.value for s in _FoundationShape]}"
-                ) from e
-
-
-@dataclass(frozen=True)
-class Mat(_Foundation):
-    length: Length
-    inclination: float = 0
-    # inclination of load with respect to vertical
-    # α is always in degrees
-
-
-@dataclass(frozen=True)
-class Soil:
-    c: Stress
-    phi: float  # φ is always in degrees
-    gamma_nat: SpecificWeight
-    gamma_sat: SpecificWeight
-    groundwater_table: Length
 
 
 # ------------------------------------------------------------------
@@ -188,8 +138,6 @@ def terzaghi_bearing_capacity(
 
     sigma_v_eff = _effective_overburden(bearing_soil, D)
     Nc, Nq, Ngamma = _terzaghi_factors(phi)
-    # Nc, Nq, Ngamma = Nc, Nq, 0.49  # HACK TRYING TO COMPARE WITH SOLVED MODELS
-    # print(f"Nc = {Nc:.2f}, Nq = {Nq:.2f}, Nγ = {Ngamma:.2f}\n")
 
     match foundation.shape:
         case _FoundationShape.continuous:
@@ -300,7 +248,6 @@ def general_bearing_capacity(
 
     sigma_v_eff = _effective_overburden(soil, foundation.Df)
     Nc, Nq, Ngamma = _general_factors(phi)
-    # print(f"Nc = {Nc:.2f}, Nq = {Nq:.2f}, Nγ = {Ngamma:.2f}\n")
 
     S_c, S_q, S_gamma, D_c, D_q, D_gamma, I_c, I_q, I_gamma = (
         _shape_depth_inclination_factors(
@@ -310,12 +257,6 @@ def general_bearing_capacity(
             soil=soil,
         )
     )
-
-    # print(
-    #     f"S_c = {S_c:.2f}, S_q = {S_q:.2f}, S_γ = {S_gamma:.2f}\n"
-    #     f"D_c = {D_c:.2f}, D_q = {D_q:.2f}, D_γ = {D_gamma:.2f}\n"
-    #     f"I_c = {I_c:.2f}, I_q = {I_q:.2f}, I_γ = {I_gamma:.2f}\n"
-    # )
 
     qu = (
         c * (Nc * S_c * D_c * I_c)
