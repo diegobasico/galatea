@@ -3,8 +3,8 @@ import numpy as np
 import polars as pl
 
 from units.units import Stress, SpecificWeight, Length
-from BearingCapacity.objects import Soil, Footing, Mat, FoundationShape
-
+from galatea.footings import Footing, Mat, FoundationShape
+from galatea.soil import Soil
 
 # ------------------------------------------------------------------
 # Constants
@@ -70,7 +70,7 @@ def _local_shear_parameters(c: Stress, phi: float) -> tuple[Stress, float]:
     return c, phi
 
 
-def _terzaghi_factors(phi: float) -> tuple[float, float, float]:
+def terzaghi_factors(phi: float) -> tuple[float, float, float]:
     """
     Terzaghi bearing capacity factors for general shear failure. (Coduto, 2021)
     """
@@ -92,7 +92,7 @@ def _terzaghi_factors(phi: float) -> tuple[float, float, float]:
 
 
 def terzaghi_bearing_capacity(
-    foundation: Footing, soil: Soil, local: bool = False
+    foundation: Footing, soil: Soil, local_shear_failure: bool = True
 ) -> Stress:
     """
     Computes the ultimate bearing capacity using Terzaghi's formulation.
@@ -118,27 +118,27 @@ def terzaghi_bearing_capacity(
     - Assumes vertical loading and horizontal ground surface.
     """
 
-    if local:
+    if local_shear_failure:
         c, phi = _local_shear_parameters(soil.c, soil.phi)
-        bearing_soil = Soil(
+        soil = Soil(
             c,
             phi,
             gamma_nat=soil.gamma_nat,
             gamma_sat=soil.gamma_sat,
             groundwater_table=soil.groundwater_table,
         )
-    else:
-        bearing_soil = soil
 
-    zw = bearing_soil.groundwater_table
-    phi = bearing_soil.phi
-    c = bearing_soil.c
+    zw = soil.groundwater_table
+    phi = soil.phi
+    c = soil.c
     D = foundation.Df
     B = foundation.width
     gamma_corr = _corrected_gamma_for_Ngamma(soil=soil, Df=D, B=B, zw=zw)
 
-    sigma_v_eff = _effective_overburden(bearing_soil, D)
-    Nc, Nq, Ngamma = _terzaghi_factors(phi)
+    sigma_v_eff = _effective_overburden(soil, D)
+    Nc, Nq, Ngamma = terzaghi_factors(phi)
+
+    print(gamma_corr.to("kg/m³"))
 
     match foundation.shape:
         case FoundationShape.continuous:
@@ -214,8 +214,7 @@ def _shape_depth_inclination_factors(Nq: float, Nc: float, foundation: Mat, soil
 
 
 def general_bearing_capacity(
-    foundation: Mat,
-    soil: Soil,
+    foundation: Mat, soil: Soil, local_shear_failure: bool = False
 ) -> Stress:
     """
     Computes the ultimate bearing capacity using the general bearing
@@ -239,6 +238,15 @@ def general_bearing_capacity(
     - Load inclination angle is assumed in degrees.
     - Groundwater corrections follow linear interpolation.
     """
+    if local_shear_failure:
+        c, phi = _local_shear_parameters(soil.c, soil.phi)
+        soil = Soil(
+            c,
+            phi,
+            gamma_nat=soil.gamma_nat,
+            gamma_sat=soil.gamma_sat,
+            groundwater_table=soil.groundwater_table,
+        )
 
     zw = soil.groundwater_table
     phi = soil.phi
@@ -295,11 +303,11 @@ def bearing_factors_table(
 
             def factors(phi: float):
                 _, phi_local = _local_shear_parameters(Stress(0, "kg/cm²"), phi)
-                return _terzaghi_factors(phi_local)
+                return terzaghi_factors(phi_local)
         else:
 
             def factors(phi: float):
-                return _terzaghi_factors(phi)
+                return terzaghi_factors(phi)
     else:
 
         def factors(phi: float):
@@ -351,7 +359,7 @@ if __name__ == "__main__":
 
     print("\nTerzaghi:\n" + "-" * 14)
 
-    qu = terzaghi_bearing_capacity(test_footing, test_soil, local=True)
+    qu = terzaghi_bearing_capacity(test_footing, test_soil)
     q_adm = qu / _FACTOR_SEGURIDAD
 
     print(f"σ_u  : {qu.to('kg/cm²'):.3f}")

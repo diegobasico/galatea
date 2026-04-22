@@ -1,6 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass
-from units.units import Stress, SpecificWeight, Length
+from units.units import Length
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -40,12 +40,3 @@ class Mat(Foundation):
     inclination: float = 0
     # inclination of load with respect to vertical
     # α is always in degrees
-
-
-@dataclass(frozen=True)
-class Soil:
-    c: Stress
-    phi: float  # φ is always in degrees
-    gamma_nat: SpecificWeight
-    gamma_sat: SpecificWeight
-    groundwater_table: Length
