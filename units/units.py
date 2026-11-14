@@ -61,6 +61,7 @@ class SpecificWeightUnit(BaseUnit):
     kN_m3 = ("kN/m³", 1e3)
     g_cm3 = ("g/cm³", 9806.6500286389)
     Kg_m3 = ("kg/m³", 9.8066500286389)
+    Kg_cm3 = ("kg/cm³", 9.8066500286389 * 1e6)
 
 
 # --- Measures ---

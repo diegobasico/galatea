@@ -11,11 +11,6 @@ from galatea.soil import Soil
 # ------------------------------------------------------------------
 
 _GAMMA_W = SpecificWeight(1, "g/cm³")  # Water unit weight
-_FACTOR_SEGURIDAD = 3.0
-
-# ------------------------------------------------------------------
-# Geometry & Soil Models
-# ------------------------------------------------------------------
 
 
 # ------------------------------------------------------------------
@@ -332,43 +327,20 @@ def bearing_factors_table(
 
 
 # ------------------------------------------------------------------
+# Subgrade Modulus
+# ------------------------------------------------------------------
+
+
+def subgrade_modulus(bearing_capacity: Stress, B: Length, poisson: float = 0.50):
+    E_s = bearing_capacity * 200
+    K_s = cast(SpecificWeight, E_s / (B * (1 - poisson**2)))
+    return K_s
+
+
+# ------------------------------------------------------------------
 # Validation
 # ------------------------------------------------------------------
 
 
 if __name__ == "__main__":
-    test_soil = Soil(
-        c=Stress(0.237803411379647, "kg/cm²"),
-        phi=14.099078143577,
-        gamma_nat=SpecificWeight(1.83146129445547, "g/cm³"),
-        gamma_sat=SpecificWeight(1.61277588759615, "g/cm³"),
-        groundwater_table=Length(2.90, "m"),
-    )
-
-    test_footing = Footing(
-        Df=Length(1, "m"),
-        width=Length(1, "m"),
-        shape="square",
-    )
-
-    test_mat = Mat(
-        Df=Length(0.5, "m"),
-        width=Length(6, "m"),
-        length=Length(11, "m"),
-    )
-
-    print("\nTerzaghi:\n" + "-" * 14)
-
-    qu = terzaghi_bearing_capacity(test_footing, test_soil)
-    q_adm = qu / _FACTOR_SEGURIDAD
-
-    print(f"σ_u  : {qu.to('kg/cm²'):.3f}")
-    print(f"σ_adm: {q_adm.to('kg/cm²'):.3f}")
-
-    print("\nGeneral:\n" + "-" * 14)
-
-    qu = general_bearing_capacity(test_mat, test_soil)
-    q_adm = qu / _FACTOR_SEGURIDAD
-
-    print(f"σ_u  : {qu.to('kg/cm²'):.3f}")
-    print(f"σ_adm: {q_adm.to('kg/cm²'):.3f}")
+    pass
